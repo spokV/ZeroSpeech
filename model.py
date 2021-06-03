@@ -38,6 +38,7 @@ class Encoder(nn.Module):
             nn.ReLU(True),
             nn.Conv1d(channels, embedding_dim, 1)
         )
+        
         self.bn_type = bn_type
         self.embedding_dim = embedding_dim
         #self.vae_latent_dim = vae_latent_dim
@@ -48,16 +49,20 @@ class Encoder(nn.Module):
     def forward(self, mels):
         loss = torch.tensor([0]).to(mels.device)
         perplexity = torch.tensor(0).to(mels.device)
-
+        mu = torch.tensor([0]).to(mels.device)
+        var = torch.tensor([0]).to(mels.device)
+        
         z = self.encoder(mels)
         if self.bn_type == 'vq-vae':
             z, loss, perplexity = self.codebook(z.transpose(1, 2))
         elif self.bn_type == 'ae':
             z = z.transpose(1, 2)
         elif self.bn_type == 'vae':
-            z, loss, perplexity = self.vae(z.transpose(1, 2))
+            z, loss, perplexity, mu, var = self.vae(z.transpose(1, 2))
+        else:
+            return z.transpose(1, 2), loss, perplexity, mu, var
         z = self.jitter(z)
-        return z, loss, perplexity
+        return z, loss, perplexity, mu, var
 
     def encode(self, mel):
         z = self.encoder(mel)
@@ -185,15 +190,14 @@ class VAE(nn.Module):
         mu = self.fc_mu(result)
         log_var = self.fc_var(result)
         
-        if self.training:
-            result = self.reparameterize(mu, log_var)
-            result = self.decoder_input(result)
-            z = result.view(-1, 16, self.embedding_dim)
+        result = self.reparameterize(mu, log_var)
+        result = self.decoder_input(result)
+        z = result.view(-1, 16, self.embedding_dim)
 
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
         loss = self.kl_weight * kld_loss
 
-        return z, loss, perplexity
+        return z, loss, perplexity, mu, log_var
 
     def reparameterize(self, mu, logvar):
         """
@@ -277,3 +281,18 @@ class Decoder(nn.Module):
         output = np.asarray(output, dtype=np.float64)
         output = mulaw_decode(output, self.quantization_channels)
         return output
+
+class MLP(nn.Module):
+    def __init__(self, in_channels, n_speakers, speaker_embedding_dim, embedding_dim):
+        super().__init__() 
+
+        self.MLP_speaker = nn.Sequential(
+            nn.Linear(embedding_dim*16, 2048),
+            nn.ReLU(True),
+            nn.Linear(2048, n_speakers),
+        )
+    
+    def forward(self, z):
+        result = torch.flatten(z, start_dim=1)
+        s = self.MLP_speaker(result)
+        return s
