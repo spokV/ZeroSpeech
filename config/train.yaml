@@ -4,5 +4,6 @@ defaults:
     - model: default
     - training: default
 
+#resume: /home/linuxu/repos/ZeroSpeech/checkpoints/model.ckpt-10.pt
 resume: False
-checkpoint_dir: ???
+checkpoint_dir: /home/linuxu/repos/ZeroSpeech/checkpoints/

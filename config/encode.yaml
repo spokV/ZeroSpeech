@@ -1,8 +1,8 @@
 defaults:
-    - dataset: 2019/english
+    - dataset: 2019/surprise
     - preprocessing: default
     - model: default
 
-checkpoint: ???
-out_dir: ???
+checkpoint: checkpoints/model.ckpt-10.pt
+out_dir: submission/2019/surprise/test
 save_auxiliary: False

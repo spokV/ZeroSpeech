@@ -18,7 +18,7 @@ def get_gru_cell(gru):
 
 
 class Encoder(nn.Module):
-    def __init__(self, in_channels, channels, n_embeddings, embedding_dim, jitter=0):
+    def __init__(self, in_channels, channels, n_embeddings, embedding_dim, vae_latent_dim, jitter=0, bn_type='vq-vae'):
         super(Encoder, self).__init__()
         self.encoder = nn.Sequential(
             nn.Conv1d(in_channels, channels, 3, 1, 0, bias=False),
@@ -38,12 +38,24 @@ class Encoder(nn.Module):
             nn.ReLU(True),
             nn.Conv1d(channels, embedding_dim, 1)
         )
+        self.bn_type = bn_type
+        self.embedding_dim = embedding_dim
+        #self.vae_latent_dim = vae_latent_dim
         self.codebook = VQEmbeddingEMA(n_embeddings, embedding_dim)
+        self.vae = VAE(n_embeddings, embedding_dim, vae_latent_dim)
         self.jitter = Jitter(jitter)
 
     def forward(self, mels):
+        loss = torch.tensor([0]).to(mels.device)
+        perplexity = torch.tensor(0).to(mels.device)
+
         z = self.encoder(mels)
-        z, loss, perplexity = self.codebook(z.transpose(1, 2))
+        if self.bn_type == 'vq-vae':
+            z, loss, perplexity = self.codebook(z.transpose(1, 2))
+        elif self.bn_type == 'ae':
+            z = z.transpose(1, 2)
+        elif self.bn_type == 'vae':
+            z, loss, perplexity = self.vae(z.transpose(1, 2))
         z = self.jitter(z)
         return z, loss, perplexity
 
@@ -51,7 +63,6 @@ class Encoder(nn.Module):
         z = self.encoder(mel)
         z, indices = self.codebook.encode(z.transpose(1, 2))
         return z, indices
-
 
 class Jitter(nn.Module):
     def __init__(self, p):
@@ -138,6 +149,63 @@ class VQEmbeddingEMA(nn.Module):
         perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
 
         return quantized, loss, perplexity
+
+
+class VAE(nn.Module):
+    def __init__(self, n_embeddings, embedding_dim, latent_dim, kl_weight=0.5):
+        super(VAE, self).__init__()
+        self.kl_weight = kl_weight
+
+        self.fc_mu = nn.Linear(embedding_dim*16, latent_dim)
+        self.fc_var = nn.Linear(embedding_dim*16, latent_dim)
+        self.decoder_input = nn.Linear(latent_dim, embedding_dim*16)
+        self.embedding_dim = embedding_dim
+        
+    
+    def encode(self, x):
+        result = torch.flatten(x, start_dim=1)
+
+        # Split the result into mu and var components
+        # of the latent Gaussian distribution
+        mu = self.fc_mu(result)
+        log_var = self.fc_var(result)
+        
+        result = self.reparameterize(mu, log_var)
+        result = self.decoder_input(result)
+        z = result.view(-1, 16, self.embedding_dim)
+        return z
+
+
+    def forward(self, x):
+        perplexity = torch.tensor(0).to(x.device)
+        result = torch.flatten(x, start_dim=1)
+
+        # Split the result into mu and var components
+        # of the latent Gaussian distribution
+        mu = self.fc_mu(result)
+        log_var = self.fc_var(result)
+        
+        if self.training:
+            result = self.reparameterize(mu, log_var)
+            result = self.decoder_input(result)
+            z = result.view(-1, 16, self.embedding_dim)
+
+        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
+        loss = self.kl_weight * kld_loss
+
+        return z, loss, perplexity
+
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
 
 
 class Decoder(nn.Module):

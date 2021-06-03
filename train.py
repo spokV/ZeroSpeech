@@ -15,14 +15,42 @@ from dataset import SpeechDataset
 from model import Encoder, Decoder
 
 
+def validate(dataloader_test, encoder, decoder, device, writer, global_step):
+    encoder.eval()
+    decoder.eval()
+    
+    average_recon_loss = average_vq_loss = average_perplexity = 0
+    with torch.no_grad():
+        for i, (audio, mels, speakers) in enumerate(dataloader_test, 1):
+            if speakers != 0:
+                audio, mels, speakers = audio.to(device), mels.to(device), speakers.to(device)
+
+                z, vq_loss, perplexity = encoder(mels)
+                output = decoder(audio[:, :-1], z, speakers)
+                recon_loss = F.cross_entropy(output.transpose(1, 2), audio[:, 1:])
+                loss = recon_loss + vq_loss
+
+                average_recon_loss += (recon_loss.item() - average_recon_loss) / i
+                average_vq_loss += (vq_loss.item() - average_vq_loss) / i
+                average_perplexity += (perplexity.item() - average_perplexity) / i
+
+        writer.add_scalar("recon_loss/test", average_recon_loss, global_step)
+        writer.add_scalar("vq_loss/test", average_vq_loss, global_step)
+        writer.add_scalar("average_perplexity/test", average_perplexity, global_step)
+
+        print("TEST: recon loss:{:.2E}, vq loss:{:.2E}, perpexlity:{:.3f}"
+              .format(average_recon_loss, average_vq_loss, average_perplexity))
+
+
+
 def save_checkpoint(encoder, decoder, optimizer, amp, scheduler, step, checkpoint_dir):
     checkpoint_state = {
-        "encoder": encoder.state_dict(),
-        "decoder": decoder.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "amp": amp.state_dict(),
-        "scheduler": scheduler.state_dict(),
-        "step": step}
+        'encoder': encoder.state_dict(),
+        'decoder': decoder.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'amp': amp.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'step': step}
     checkpoint_dir.mkdir(exist_ok=True, parents=True)
     checkpoint_path = checkpoint_dir / "model.ckpt-{}.pt".format(step)
     torch.save(checkpoint_state, checkpoint_path)
@@ -52,7 +80,7 @@ def train_model(cfg):
     if cfg.resume:
         print("Resume checkpoint from: {}:".format(cfg.resume))
         resume_path = utils.to_absolute_path(cfg.resume)
-        checkpoint = torch.load(resume_path, map_location=lambda storage, loc: storage)
+        checkpoint = torch.load(cfg.resume)#, map_location=lambda storage, loc: storage)
         encoder.load_state_dict(checkpoint["encoder"])
         decoder.load_state_dict(checkpoint["decoder"])
         optimizer.load_state_dict(checkpoint["optimizer"])
@@ -62,28 +90,48 @@ def train_model(cfg):
     else:
         global_step = 0
 
+    print(encoder)
+
     root_path = Path(utils.to_absolute_path("datasets")) / cfg.dataset.path
-    dataset = SpeechDataset(
+    dataset_train = SpeechDataset(
         root=root_path,
         hop_length=cfg.preprocessing.hop_length,
         sr=cfg.preprocessing.sr,
-        sample_frames=cfg.training.sample_frames)
+        sample_frames=cfg.training.sample_frames,
+        is_train=True)
+    
+    dataset_test = SpeechDataset(
+        root=root_path,
+        hop_length=cfg.preprocessing.hop_length,
+        sr=cfg.preprocessing.sr,
+        sample_frames=cfg.training.sample_frames,
+        is_train=False)
 
-    dataloader = DataLoader(
-        dataset,
+    dataloader_train = DataLoader(
+        dataset_train,
+        batch_size=cfg.training.batch_size,
+        shuffle=True,
+        num_workers=cfg.training.n_workers,
+        pin_memory=True,
+        drop_last=True)
+    
+    dataloader_test = DataLoader(
+        dataset_test,
         batch_size=cfg.training.batch_size,
         shuffle=True,
         num_workers=cfg.training.n_workers,
         pin_memory=True,
         drop_last=True)
 
-    n_epochs = cfg.training.n_steps // len(dataloader) + 1
-    start_epoch = global_step // len(dataloader) + 1
+    n_epochs = cfg.training.n_steps // len(dataloader_train) + 1
+    start_epoch = global_step // len(dataloader_train) + 1
 
     for epoch in range(start_epoch, n_epochs + 1):
         average_recon_loss = average_vq_loss = average_perplexity = 0
 
-        for i, (audio, mels, speakers) in enumerate(tqdm(dataloader), 1):
+        encoder.train()
+        decoder.train()
+        for i, (audio, mels, speakers) in enumerate(tqdm(dataloader_train), 1):
             audio, mels, speakers = audio.to(device), mels.to(device), speakers.to(device)
 
             optimizer.zero_grad()
@@ -106,6 +154,8 @@ def train_model(cfg):
 
             global_step += 1
 
+            #validate(dataloader_test, encoder, decoder, device, writer, global_step)
+
             if global_step % cfg.training.checkpoint_interval == 0:
                 save_checkpoint(
                     encoder, decoder, optimizer, amp,
@@ -117,6 +167,8 @@ def train_model(cfg):
 
         print("epoch:{}, recon loss:{:.2E}, vq loss:{:.2E}, perpexlity:{:.3f}"
               .format(epoch, average_recon_loss, average_vq_loss, average_perplexity))
+
+        #validate(dataloader_test, encoder, decoder, device, writer, global_step)
 
 
 if __name__ == "__main__":

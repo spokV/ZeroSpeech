@@ -4,7 +4,9 @@ model:
         channels: 768
         n_embeddings: 512
         embedding_dim: 64
+        vae_latent_dim: 32
         jitter: 0.5
+        bn_type: 'vae'
     decoder:
         in_channels: ${model.encoder.embedding_dim}
         conditioning_channels: 128

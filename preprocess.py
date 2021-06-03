@@ -9,6 +9,7 @@ from multiprocessing import cpu_count
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from tqdm import tqdm
+import soundfile as sf
 
 
 def preemphasis(x, preemph):
@@ -29,7 +30,7 @@ def mulaw_decode(y, mu):
 
 def process_wav(wav_path, out_path, sr=160000, preemph=0.97, n_fft=2048, n_mels=80, hop_length=160,
                 win_length=400, fmin=50, top_db=80, bits=8, offset=0.0, duration=None):
-    wav, _ = librosa.load(wav_path.with_suffix(".wav"), sr=sr,
+    wav, _ = librosa.load(wav_path + '.wav', sr=sr,
                           offset=offset, duration=duration)
     wav = wav / np.abs(wav).max() * 0.999
 
@@ -46,8 +47,8 @@ def process_wav(wav_path, out_path, sr=160000, preemph=0.97, n_fft=2048, n_mels=
 
     wav = mulaw_encode(wav, mu=2**bits)
 
-    np.save(out_path.with_suffix(".wav.npy"), wav)
-    np.save(out_path.with_suffix(".mel.npy"), logmel)
+    np.save(out_path + '.wav.npy', wav)
+    np.save(out_path + '.mel.npy', logmel)
     return out_path, logmel.shape[-1]
 
 
@@ -68,10 +69,13 @@ def preprocess_dataset(cfg):
                 wav_path = in_dir / in_path
                 out_path = out_dir / out_path
                 out_path.parent.mkdir(parents=True, exist_ok=True)
+                #process_wav( str(wav_path), str(out_path), **cfg.preprocessing,
+                #            offset=start, duration=duration)
                 futures.append(executor.submit(
-                    partial(process_wav, wav_path, out_path, **cfg.preprocessing,
+                    partial(process_wav, str(wav_path), str(out_path), **cfg.preprocessing,
                             offset=start, duration=duration)))
 
+        
         results = [future.result() for future in tqdm(futures)]
 
         lengths = [x[-1] for x in results]
@@ -79,7 +83,7 @@ def preprocess_dataset(cfg):
         frame_shift_ms = cfg.preprocessing.hop_length / cfg.preprocessing.sr
         hours = frames * frame_shift_ms / 3600
         print("Wrote {} utterances, {} frames ({:.2f} hours)".format(len(lengths), frames, hours))
-
+        
 
 if __name__ == "__main__":
     preprocess_dataset()

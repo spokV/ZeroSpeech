@@ -31,7 +31,7 @@ def encode_dataset(cfg):
 
     print("Load checkpoint from: {}:".format(cfg.checkpoint))
     checkpoint_path = utils.to_absolute_path(cfg.checkpoint)
-    checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
+    checkpoint = torch.load(str(checkpoint_path))#, map_location=lambda storage, loc: storage)
     encoder.load_state_dict(checkpoint["encoder"])
 
     encoder.eval()
@@ -46,7 +46,12 @@ def encode_dataset(cfg):
 
     for _, _, _, path in tqdm(metadata):
         path = root_path.parent / path
-        mel = torch.from_numpy(np.load(path.with_suffix(".mel.npy"))).unsqueeze(0).to(device)
+        #mel = torch.from_numpy(np.load(path.with_suffix(".mel.npy"))).unsqueeze(0)#.to(device)
+        mel = torch.from_numpy(np.load(path.with_suffix(".mel.npy")))
+        mel = mel.type(torch.FloatTensor)
+        mel = mel.unsqueeze(0).to(device)
+        #mel = np.load(path.with_suffix(".mel.npy"))
+        #mel = torch.FloatTensor(mel)#.to(device)
         with torch.no_grad():
             z, indices = encoder.encode(mel)
 
