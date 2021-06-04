@@ -9,5 +9,5 @@ training:
             - 300000
             - 400000
         gamma: 0.5
-    checkpoint_interval: 10
+    checkpoint_interval: 2000
     n_workers: 4

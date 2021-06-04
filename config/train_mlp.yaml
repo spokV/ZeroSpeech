@@ -4,7 +4,7 @@ defaults:
     - model: default
     - training: default
 
-resume: /home/linuxu/repos/ZeroSpeech/checkpoints/model.ckpt-10.pt
+resume: /home/linuxu/repos/ZeroSpeech/checkpoints/vae/D32/model.ckpt-12000.pt
 #resume: False
 checkpoint_dir: /home/linuxu/repos/ZeroSpeech/checkpoints/
 tensorboard_dir: /home/linuxu/repos/ZeroSpeech/logs/

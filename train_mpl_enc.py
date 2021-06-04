@@ -16,7 +16,7 @@ from dataset import SpeechDataset
 from model import Encoder, Decoder, MLP
 
 
-def validate(dataloader_test, encoder, mlp, device, global_step, n_speakers):
+def validate(dataloader_test, encoder, mlp, device, global_step, n_speakers, writer):
     encoder.eval()
     mlp.eval()
     
@@ -60,11 +60,15 @@ def validate(dataloader_test, encoder, mlp, device, global_step, n_speakers):
         else:
             print('Test Accuracy of %5s: N/A (no training examples)' % (classes[i]))
         """
-        print('\nTest Accuracy (Overall): %2d%% (%2d/%2d)' % (
-            100. * np.sum(class_correct) / np.sum(class_total),
-            np.sum(class_correct), np.sum(class_total)))
-        print("TEST: loss:{:.2E}"
-              .format(average_loss))
+        accu = 100. * np.sum(class_correct) / np.sum(class_total)
+        print('TEST: loss: %2f Test Accuracy (Overall): %2d%% (%2d/%2d)' % (
+            average_loss, accu, np.sum(class_correct), np.sum(class_total))
+            )
+        #print("TEST: loss:{:.2E}"
+        #      .format(average_loss))
+        
+        writer.add_scalar("loss/test", average_loss, global_step)
+        writer.add_scalar("accuracy/test", accu, global_step)
         #print('mu: ', torch.mean(mu, dim=0))
         #print('var: ', torch.mean(var, dim=0))       
 
@@ -86,9 +90,9 @@ def save_checkpoint(encoder, decoder, optimizer, amp, scheduler, step, checkpoin
 
 @hydra.main(config_path="config/train_mlp.yaml")
 def train_model(cfg):
-    #tensorboard_path = Path(utils.to_absolute_path("tensorboard")) / cfg.tensorboard_dir
+    tensorboard_path = Path(utils.to_absolute_path("tensorboard")) / cfg.tensorboard_dir
     checkpoint_dir = Path(utils.to_absolute_path(cfg.checkpoint_dir))
-    #writer = SummaryWriter(tensorboard_path)
+    writer = SummaryWriter(tensorboard_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     encoder = Encoder(**cfg.model.encoder)
@@ -96,7 +100,7 @@ def train_model(cfg):
     #decoder = Decoder(**cfg.model.decoder)
     #bottleneck_type = cfg.model.encoder.bn_type
     #writer.add_graph(encoder)
-    #writer.add_graph(decoder)
+    #writer.add_graph(mlp)
     encoder.to(device)
     mlp.to(device)
 
@@ -212,7 +216,7 @@ def train_model(cfg):
         print("TRAIN: epoch:{}, loss:{:.2E}"
               .format(epoch, average_loss))
 
-        validate(dataloader_val, encoder, mlp, device, global_step, cfg.model.mlp.n_speakers)
+        validate(dataloader_val, encoder, mlp, device, global_step, cfg.model.mlp.n_speakers, writer)
 
 
 if __name__ == "__main__":

@@ -39,8 +39,16 @@ def validate(dataloader_test, encoder, decoder, bottleneck_type, device, writer,
 
         print("TEST: recon loss:{:.2E}, vq loss:{:.2E}, perpexlity:{:.3f}"
               .format(average_recon_loss, average_vq_loss, average_perplexity))
-        print('mu: ', torch.mean(mu, dim=0))
-        print('var: ', torch.mean(var, dim=0))       
+        mu_mean = torch.mean(mu, dim=0)
+        var_mean = torch.mean(var, dim=0)
+        print('mu: ', mu_mean)
+        print('var: ', var_mean)
+
+        for i in range(len(mu_mean)):
+            if var_mean[i] > 0.0:
+                no = torch.normal(mu_mean[i], var_mean[i], size=(1, 1000))
+                writer.add_histogram('latent distribution', no, i)
+        
 
 
 
@@ -176,6 +184,8 @@ def train_model(cfg):
                 save_checkpoint(
                     encoder, decoder, optimizer, amp,
                     scheduler, global_step, checkpoint_dir)
+
+            #validate(dataloader_val, encoder, decoder, bottleneck_type, device, writer, global_step)
 
         writer.add_scalar("recon_loss/train", average_recon_loss, global_step)
         writer.add_scalar("vq_loss/train", average_vq_loss, global_step)
