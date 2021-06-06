@@ -121,9 +121,8 @@ def train_model(cfg):
         #optimizer.load_state_dict(checkpoint["optimizer"])
         amp.load_state_dict(checkpoint["amp"])
         scheduler.load_state_dict(checkpoint["scheduler"])
-        global_step = checkpoint["step"]
-    else:
-        global_step = 0
+        #global_step = checkpoint["step"]
+    global_step = 0
 
     print(encoder)
 
@@ -176,7 +175,7 @@ def train_model(cfg):
     start_epoch = global_step // len(dataloader_train) + 1
     lossF = torch.nn.CrossEntropyLoss()
 
-    for epoch in range(start_epoch, n_epochs + 1):
+    for epoch in range(start_epoch, 30 + 1):
         average_loss = 0
 
         encoder.eval()

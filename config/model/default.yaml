@@ -4,7 +4,7 @@ model:
         channels: 768
         n_embeddings: 512
         embedding_dim: 64
-        vae_latent_dim: 32
+        vae_latent_dim: 16
         jitter: 0.5
         bn_type: 'none'
     decoder:
